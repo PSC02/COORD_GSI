@@ -1,0 +1,116 @@
+@extends('layouts.app')
+@section('page-title', 'Anos Letivos')
+@section('header-actions')
+<a href="{{ route('anos-letivos.create') }}" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Novo Ano Letivo</a>
+@endsection
+@section('content')
+<x-card>
+    @if($anosLetivos->count() > 0)
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left">Nome</th>
+                    <th class="px-6 py-3 text-left">Data Início</th>
+                    <th class="px-6 py-3 text-left">Data Fim</th>
+                    <th class="px-6 py-3 text-center">Status</th>
+                    <th class="px-6 py-3 text-center">Turmas</th>
+                    <th class="px-6 py-3 text-right">Ações</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                @forelse($anosLetivos as $ano)
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 {{ $ano->ativo ? 'bg-green-50 dark:bg-green-900/20' : '' }}">
+                        <td class="px-6 py-4 font-semibold">
+                            {{ $ano->nome }}
+                        </td>
+
+                        <td class="px-6 py-4">
+                            {{ optional($ano->data_inicio)->format('d/m/Y') }}
+                        </td>
+
+                        <td class="px-6 py-4">
+                            {{ optional($ano->data_fim)->format('d/m/Y') }}
+                        </td>
+
+                        <td class="px-6 py-4 text-center">
+                            @if($ano->ativo)
+                                <x-badge type="success">Ativo</x-badge>
+                            @elseif($ano->encerrado)
+                                <x-badge type="danger">Encerrado</x-badge>
+                            @else
+                                <x-badge type="gray">Inativo</x-badge>
+                            @endif
+                        </td>
+
+                        <td class="px-6 py-4 text-center font-medium">
+                            {{ $ano->turmas_count }}
+                        </td>
+
+    <td class="px-6 py-4 text-right space-x-3">
+
+    {{-- Visualizar --}}
+    <a href="{{ route('anos-letivos.show', $ano) }}"
+       class="text-gray-600 hover:text-gray-800 transition">
+        <i class="fas fa-eye"></i>
+    </a>
+
+    {{-- Editar (somente se não estiver encerrado) --}}
+    @if(!$ano->encerrado)
+    <a href="{{ route('anos-letivos.edit', $ano) }}"
+       class="text-blue-600 hover:text-blue-800 transition">
+        <i class="fas fa-edit"></i>
+    </a>
+    @endif
+
+    {{-- Encerrar --}}
+    @if($ano->ativo && !$ano->encerrado)
+    <form action="{{ route('anos-letivos.encerrar', $ano) }}"
+          method="POST"
+          class="inline">
+        @csrf
+        <button type="submit"
+                class="text-red-600 hover:text-red-800 transition"
+                onclick="return confirm('Deseja encerrar este ano letivo?')">
+            <i class="fas fa-stop"></i>
+        </button>
+    </form>
+    @endif
+
+    {{-- Ativar (anos inativos, encerrados ou não) 
+    @if(!$ano->ativo)
+    <form action="{{ route('anos-letivos.reativar', $ano) }}"
+          method="POST"
+          class="inline">
+        @csrf
+        <button type="submit"
+                class="text-green-600 hover:text-green-800 transition"
+                onclick="return confirm('Deseja reativar este ano letivo?')">
+            <i class="fas fa-play"></i>
+        </button>
+    </form>
+    @endif
+        --}}
+</td>
+
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="6" class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                            Nenhum ano letivo registado.
+                        </td>
+                    </tr>
+                    @endforelse
+
+            </tbody>
+        </table>
+    </div>
+    @else
+    <div class="text-center py-12">
+        <i class="fas fa-calendar-alt text-5xl text-gray-300 mb-4"></i>
+        <p class="text-gray-500">Nenhum ano letivo registado</p>
+        <a href="{{ route('anos-letivos.create') }}" class="btn btn-primary mt-4"><i class="fas fa-plus mr-2"></i>Criar Primeiro Ano</a>
+    </div>
+    @endif
+</x-card>
+@endsection

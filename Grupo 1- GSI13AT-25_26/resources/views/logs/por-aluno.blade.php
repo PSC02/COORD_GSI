@@ -1,0 +1,42 @@
+@extends('layouts.app')
+
+@section('page-title', 'Registro - ' . $aluno->name)
+
+@section('content')
+<x-card title="Registro do Aluno: {{ $aluno->name }}" icon="fas fa-user">
+    @if($logs->count() > 0)
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Data/Hora</th>
+                         <th class="px-4 py-2 text-left">Utilizador</th>
+                        <th class="px-4 py-2 text-left">Acao</th>
+                        <th class="px-4 py-2 text-left">Disciplina</th>
+                        <th class="px-4 py-2 text-left">Campo</th>
+                        <th class="px-4 py-2 text-left">Alteração</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+                    @foreach($logs as $log)
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-3">{{ $log->data_alteracao->format('d/m/Y H:i') }}</td>
+                            <td class="px-4 py-3">{{ optional($log->usuario)->name ?? 'Sistema' }}</td>
+                            <td class="px-4 py-3">
+                                <x-badge type="{{ $log->tipo_badge_acao }}">{{ $log->descricao_acao }}</x-badge>
+                            </td>
+                            <td class="px-4 py-3">{{ optional($log->disciplina)->nome ?? '-' }}</td>
+                            <td class="px-4 py-3">{{ $log->descricao_campo }}</td>
+                            <td class="px-4 py-3 text-xs">{{ $log->resumo_alteracao }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+
+         {{ $logs->links('vendor.pagination.tailwind') }}
+    @else
+        <p class="py-8 text-center text-gray-500">Nenhum log encontrado</p>
+    @endif
+</x-card>
+@endsection

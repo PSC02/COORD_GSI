@@ -1,0 +1,291 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Exports\LogsDashboardExport;
+use App\Exports\LogsListExport;
+use App\Models\Disciplina;
+use App\Models\NotaLog;
+use App\Models\Turma;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
+use Maatwebsite\Excel\Facades\Excel;
+
+class LogController extends Controller
+{
+    /**
+     * Listar logs de alterações
+     */
+    public function index(Request $request)
+    {
+        $this->checkPermission('logs.view');
+
+        $logs = $this->queryLogs($request)
+            ->paginate(50)
+            ->withQueryString();
+
+        $usuarios = User::whereIn('id', NotaLog::distinct('usuario_id')->pluck('usuario_id'))->get();
+        $turmas = Turma::anoAtivo()->with('curso')->get();
+        $disciplinas = Disciplina::ativos()->get();
+
+        return view('logs.index', compact('logs', 'usuarios', 'turmas', 'disciplinas'));
+    }
+
+    /**
+     * Logs de um aluno específico
+     */
+    public function porAluno(User $aluno)
+    {
+        $this->checkPermission('logs.view');
+
+        $logs = NotaLog::where('acao_global', false)
+            ->where('aluno_id', $aluno->id)
+            ->with(['usuario', 'disciplina', 'turma'])
+            ->latest('data_alteracao')
+            ->paginate(30);
+
+        return view('logs.por-aluno', compact('logs', 'aluno'));
+    }
+
+    /**
+     * Logs de uma nota específica
+     */
+    public function porNota($notaId)
+    {
+        $this->checkPermission('logs.view');
+
+        $logs = NotaLog::where('acao_global', false)
+            ->where('nota_id', $notaId)
+            ->with(['usuario', 'aluno', 'disciplina'])
+            ->latest('data_alteracao')
+            ->get();
+
+        return view('logs.por-nota', compact('logs'));
+    }
+
+    /**
+     * Logs de uma turma e disciplina
+     */
+    public function porTurmaDisciplina(Turma $turma, Disciplina $disciplina)
+    {
+        $this->checkPermission('logs.view');
+
+        $logs = NotaLog::where('turma_id', $turma->id)
+            ->where('disciplina_id', $disciplina->id)
+            ->with(['usuario', 'aluno'])
+            ->latest('data_alteracao')
+            ->paginate(50);
+
+        return view('logs.por-turma-disciplina', compact('logs', 'turma', 'disciplina'));
+    }
+
+    /**
+     * Logs de um usuário (quem fez alterações)
+     */
+    public function porUsuario(User $usuario)
+    {
+        $this->checkPermission('logs.view');
+
+        $logs = NotaLog::where('usuario_id', $usuario->id)
+            ->with(['aluno', 'disciplina', 'turma'])
+            ->latest('data_alteracao')
+            ->paginate(50);
+
+        return view('logs.por-usuario', compact('logs', 'usuario'));
+    }
+
+    /**
+     * Dashboard de logs (estatísticas)
+     */
+    public function dashboard()
+    {
+        $this->checkPermission('logs.view');
+
+        return view('logs.dashboard', $this->dadosDashboard());
+    }
+
+    /**
+     * Exportar logs para XLSX
+     */
+    public function exportar(Request $request)
+    {
+        $this->checkPermission('logs.view');
+
+        if ($request->query('contexto') === 'dashboard') {
+            return Excel::download(
+                new LogsDashboardExport($this->dadosDashboard()),
+                'dashboard-logs-'.now()->format('Y-m-d-His').'.xlsx'
+            );
+        }
+
+        $logs = $this->queryLogs($request)
+            ->limit(100000)
+            ->get();
+
+        return Excel::download(
+            new LogsListExport($logs, $this->resumoFiltros($request)),
+            'logs-'.now()->format('Y-m-d-His').'.xlsx'
+        );
+    }
+
+    private function dadosDashboard(): array
+    {
+        $totalLogs = NotaLog::count();
+        $logsHoje = NotaLog::whereDate('data_alteracao', today())->count();
+        $logsSemana = NotaLog::where('data_alteracao', '>=', now()->subWeek())->count();
+        $logsMes = NotaLog::where('data_alteracao', '>=', now()->subMonth())->count();
+
+        $logsPorAcao = NotaLog::selectRaw('acao, COUNT(*) as total')
+            ->groupBy('acao')
+            ->pluck('total', 'acao');
+
+        $logsPorTrimestre = NotaLog::whereNotNull('trimestre')
+            ->selectRaw('trimestre, COUNT(*) as total')
+            ->groupBy('trimestre')
+            ->pluck('total', 'trimestre');
+
+        $topUsuarios = NotaLog::selectRaw('usuario_id, COUNT(*) as total')
+            ->groupBy('usuario_id')
+            ->orderByDesc('total')
+            ->take(10)
+            ->with('usuario.role')
+            ->get();
+
+        $topDisciplinas = NotaLog::selectRaw('disciplina_id, COUNT(*) as total')
+            ->whereNotNull('disciplina_id')
+            ->groupBy('disciplina_id')
+            ->orderByDesc('total')
+            ->take(10)
+            ->with('disciplina')
+            ->get();
+
+        $atividadeSemanalRaw = NotaLog::selectRaw('DATE(data_alteracao) as dia, COUNT(*) as total')
+            ->where('data_alteracao', '>=', now()->subDays(6))
+            ->groupBy('dia')
+            ->pluck('total', 'dia');
+
+        $atividadeSemanal = collect();
+
+        for ($i = 6; $i >= 0; $i--) {
+            $data = now()->subDays($i)->format('Y-m-d');
+            $atividadeSemanal[$data] = $atividadeSemanalRaw[$data] ?? 0;
+        }
+
+        $logsRecentes = NotaLog::with(['usuario', 'aluno', 'turma', 'disciplina'])
+            ->latest('data_alteracao')
+            ->take(20)
+            ->get();
+
+        return compact(
+            'totalLogs',
+            'logsHoje',
+            'logsSemana',
+            'logsMes',
+            'logsPorAcao',
+            'logsPorTrimestre',
+            'topUsuarios',
+            'topDisciplinas',
+            'logsRecentes',
+            'atividadeSemanal'
+        );
+    }
+
+    private function queryLogs(Request $request): Builder
+    {
+        $query = NotaLog::with(['usuario', 'aluno', 'turma', 'disciplina'])
+            ->latest('data_alteracao');
+
+        if ($request->filled('usuario_id')) {
+            $query->where('usuario_id', $request->usuario_id);
+        }
+
+        if ($request->filled('aluno_id')) {
+            $query->where('acao_global', false)
+                ->where('aluno_id', $request->aluno_id);
+        }
+
+        if ($request->filled('turma_id')) {
+            $query->where('turma_id', $request->turma_id);
+        }
+
+        if ($request->filled('disciplina_id')) {
+            $query->where('disciplina_id', $request->disciplina_id);
+        }
+
+        if ($request->filled('utilizador')) {
+            $termoUtilizador = $request->utilizador;
+
+            $query->where(function (Builder $subQuery) use ($termoUtilizador) {
+                $subQuery->whereHas('usuario', function ($usuarioQuery) use ($termoUtilizador) {
+                    $usuarioQuery->where('name', 'like', '%'.$termoUtilizador.'%');
+                })->orWhereHas('aluno', function ($alunoQuery) use ($termoUtilizador) {
+                    $alunoQuery->where('name', 'like', '%'.$termoUtilizador.'%');
+                });
+            });
+        }
+
+        if ($request->filled('turma')) {
+            $query->whereHas('turma', function ($turmaQuery) use ($request) {
+                $turmaQuery
+                    ->where('nome', 'like', '%'.$request->turma.'%')
+                    ->orWhere('classe', 'like', '%'.$request->turma.'%');
+            });
+        }
+
+        if ($request->filled('curso')) {
+            $query->whereHas('turma.curso', function ($cursoQuery) use ($request) {
+                $cursoQuery->where('nome', 'like', '%'.$request->curso.'%');
+            });
+        }
+
+        if ($request->filled('disciplina')) {
+            $query->whereHas('disciplina', function ($disciplinaQuery) use ($request) {
+                $disciplinaQuery
+                    ->where('nome', 'like', '%'.$request->disciplina.'%')
+                    ->orWhere('codigo', 'like', '%'.$request->disciplina.'%');
+            });
+        }
+
+        if ($request->filled('acao')) {
+            $acoesFiltro = match ($request->acao) {
+                'criacao' => ['criacao', 'avaliacao_continua_criada'],
+                'edicao' => ['edicao', 'avaliacao_continua_editada'],
+                'exclusao' => ['exclusao', 'avaliacao_continua_removida'],
+                default => [$request->acao],
+            };
+
+            $query->whereIn('acao', $acoesFiltro);
+        }
+
+        if ($request->filled('trimestre')) {
+            $query->where('trimestre', $request->trimestre);
+        }
+
+        if ($request->filled('data_inicio')) {
+            $query->whereDate('data_alteracao', '>=', $request->data_inicio);
+        }
+
+        if ($request->filled('data_fim')) {
+            $query->whereDate('data_alteracao', '<=', $request->data_fim);
+        }
+
+        return $query;
+    }
+
+    private function resumoFiltros(Request $request): array
+    {
+        return collect([
+            'Utilizador' => $request->input('utilizador'),
+            'Turma' => $request->input('turma'),
+            'Curso' => $request->input('curso'),
+            'Disciplina' => $request->input('disciplina'),
+            'Ação' => $request->input('acao'),
+            'Trimestre' => $request->input('trimestre'),
+            'Data inicial' => $request->input('data_inicio'),
+            'Data final' => $request->input('data_fim'),
+        ])
+            ->filter(fn ($value) => filled($value))
+            ->all();
+    }
+}

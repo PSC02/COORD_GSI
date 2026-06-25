@@ -1,0 +1,245 @@
+@extends('layouts.app')
+
+@section('page-title', 'Editar Turma')
+
+@section('content')
+
+<form method="POST" action="{{ route('turmas.update', $turma) }}"
+      x-data="{
+        nome: '{{ old('nome', strtoupper($turma->nome ?? '')) }}',
+        areaFormacao: '',
+        atualizarCurso(el) {
+          const opt = el.options[el.selectedIndex];
+          this.areaFormacao = opt?.dataset?.area ?? '';
+        },
+        gerarNomeCompleto() {}
+      }"
+      x-init="atualizarCurso($el.querySelector('[name=\'curso_id\']'))">
+    @csrf
+    @method('PUT')
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Formulário Principal -->
+        <div class="lg:col-span-2 space-y-6">
+
+            <!-- Dados Básicos -->
+            <x-card title="Dados da Turma" icon="fas fa-chalkboard">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    <div>
+                         <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                            Nome da Turma *
+                        </label>
+                        <input
+                            type="text"
+                            name="nome"
+                            id="nome"
+                            required
+                            maxlength="1"
+                            pattern="[A-Za-z]"
+                            placeholder="Ex: A"
+                            x-model="nome"
+                            x-on:input="
+                                this.value = this.value
+                                    .replace(/[^A-Za-z]/g, '')
+                                    .slice(0, 1)
+                                    .toUpperCase();
+                                nome = this.value;
+                                gerarNomeCompleto();
+                            "
+                            x-on:keydown="
+                                const permitidas = /^[A-Za-z]$/;
+                                const teclasSistema = [
+                                    'Backspace','Delete','Tab','ArrowLeft','ArrowRight'
+                                ];
+                                if (!permitidas.test($event.key) &&
+                                    !teclasSistema.includes($event.key)) {
+                                    $event.preventDefault();
+                                }
+                            "
+                            x-on:paste="
+                                $event.preventDefault();
+                                const texto = ($event.clipboardData || window.clipboardData)
+                                    .getData('text');
+                                const letra = texto.replace(/[^A-Za-z]/g, '').slice(0,1).toUpperCase();
+                                this.value = letra;
+                                nome = letra;
+                                gerarNomeCompleto();
+                            "
+                            value="{{ old('nome', strtoupper($turma->nome ?? '')) }}"
+                            class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm uppercase tracking-widest text-center font-bold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 @error('nome') border-red-400 bg-red-50 @enderror"
+                        />
+                        <p class="text-xs text-slate-400 mt-1">
+                            Apenas uma letra de A a Z (ex: A, B, C...)
+                        </p>
+                        @error('nome')
+                            <p class="text-xs text-red-500 mt-1">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <div>
+                        <label class="label">Classe *</label>
+                        <select name="classe" class="input" required>
+                            <option value="10" {{ old('classe', $turma->classe) == '10' ? 'selected' : '' }}>10ª Classe</option>
+                            <option value="11" {{ old('classe', $turma->classe) == '11' ? 'selected' : '' }}>11ª Classe</option>
+                            <option value="12" {{ old('classe', $turma->classe) == '12' ? 'selected' : '' }}>12ª Classe</option>
+                            <option value="13" {{ old('classe', $turma->classe) == '13' ? 'selected' : '' }}>13ª Classe</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="label">Curso *</label>
+                        <select name="curso_id" class="input" required x-on:change="atualizarCurso($el)">
+                            @foreach($cursos as $curso)
+                                     <option value="{{ $curso->id }}" data-area="{{ $curso->areaFormacao?->nome ?? '' }}" {{ old('curso_id', $turma->curso_id) == $curso->id ? 'selected' : '' }}>
+                                {{ $curso->nome }}
+                            </option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-xs text-slate-500">
+                            Area herdada do curso:
+                            <span class="font-semibold text-slate-700" x-text="areaFormacao || 'Selecione um curso'"></span>
+                        </p>
+                    </div>
+
+                    <div>
+                        <label class="label">Coordenador</label>
+                        <select name="coordenador_turma_id" class="input">
+                            <option value="">Sem coordenador</option>
+                            @foreach($professores as $prof)
+                            <option value="{{ $prof->id }}" {{ $turma->coordenador_turma_id == $prof->id ? 'selected' : '' }}>
+                                {{ $prof->name }}
+                            </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="label">Capacidade (Alunos) *</label>
+                        <input type="number" name="capacidade" value="{{ old('capacidade', $turma->capacidade) }}" 
+                               min="1" max="100" class="input" required>
+                    </div>
+
+                    <div>
+                        <label class="label">Sala</label>
+                        <input
+                            type="text"
+                            name="sala"
+                            value="{{ old('sala', $turma->sala) }}"
+                            maxlength="20"
+                            placeholder="Ex: 08, B-12"
+                            class="input uppercase @error('sala') border-red-400 bg-red-50 @enderror">
+                        <p class="text-xs text-slate-400 mt-1">
+                            Opcional. Informe o número ou código da sala da turma.
+                        </p>
+                        @error('sala')
+                        <p class="text-red-600 text-sm mt-1">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    
+                    <div>
+                        <label class="label">Turno *</label>
+                        <select name="turno" id="turno" required class="input @error('turno') border-red-400 @enderror">
+                            <option value="">Selecione o turno...</option>
+                            <option value="M" {{ old('turno', $turma->turno) == 'M' ? 'selected' : '' }}>
+                                Manhã (M)
+                            </option>
+                            <option value="T" {{ old('turno', $turma->turno) == 'T' ? 'selected' : '' }}>
+                                Tarde (T)
+                            </option>
+                        </select>
+                        @error('turno')<p class="text-red-600 text-sm mt-1">{{ $message }}</p>@enderror
+                    </div>
+
+                    <div>
+                        <label class="label">Ano Letivo *</label>
+                        <select name="ano_letivo_id" class="input" required>
+                            @foreach($anosLetivos as $ano)
+                             <option value="{{ $ano->id }}" {{ old('ano_letivo_id', $turma->ano_letivo_id) == $ano->id ? 'selected' : '' }}>
+                                {{ $ano->nome }} {{ $ano->ativo ? '(Ativo)' : '' }}
+                            </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                </div>
+            </x-card>
+
+            <!-- Disciplinas -->
+            <x-card title="Disciplinas da Turma" icon="fas fa-book-open">
+                <p class="text-sm text-gray-600 mb-4">
+                    Marque as disciplinas que serão lecionadas nesta turma
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    @foreach($disciplinas as $disciplina)
+                    <label class="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <input type="checkbox" name="disciplinas[]" value="{{ $disciplina->id }}" 
+                               {{ $turma->disciplinas->contains($disciplina->id) ? 'checked' : '' }}
+                               class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-gray-900">{{ $disciplina->nome }}</span>
+                            <p class="text-xs text-gray-500">{{ $disciplina->codigo }}</p>
+                        </div>
+                    </label>
+                    @endforeach
+                </div>
+            </x-card>
+
+        </div>
+
+        <!-- Sidebar -->
+        <div class="space-y-6">
+
+            <!-- Info -->
+            <x-card title="Informações" icon="fas fa-info-circle">
+                <div class="space-y-3 text-sm">
+                    <div>
+                        <span class="text-gray-600">Nome Completo:</span>
+                        <p class="font-semibold text-gray-900">{{ $turma->nome_completo }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Total de Alunos:</span>
+                        <p class="font-semibold text-gray-900">{{ $turma->total_alunos }} / {{ $turma->capacidade }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Sala:</span>
+                        <p class="font-semibold text-gray-900">{{ old('sala', $turma->sala) ?: '-' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Criada em:</span>
+                        <p class="font-semibold text-gray-900">{{ $turma->created_at->format('d/m/Y') }}</p>
+                    </div>
+                </div>
+            </x-card>
+
+            <!-- Status -->
+            <x-card title="Status" icon="fas fa-toggle-on">
+                <label class="flex items-center">
+                    <input type="checkbox" name="ativo" value="1" {{ $turma->ativo ? 'checked' : '' }}
+                           class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded">
+                    <span class="ml-2 text-sm text-gray-600">Turma ativa</span>
+                </label>
+            </x-card>
+
+            <!-- Ações -->
+            <div class="flex flex-col space-y-3">
+                <button type="submit" class="btn btn-primary w-full">
+                    <i class="fas fa-save mr-2"></i>
+                    Guardar Alterações
+                </button>
+                <a href="{{ route('turmas.show', $turma) }}" class="btn btn-outline w-full">
+                    <i class="fas fa-arrow-left mr-2"></i>
+                    Voltar
+                </a>
+            </div>
+
+        </div>
+
+    </div>
+
+</form>
+
+@endsection
